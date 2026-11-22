@@ -1,0 +1,19 @@
+# Your Spotify: poll Spotify every 30 s instead of the built-in 120 s.
+# Add this block under the `your_spotify:` service in the your-spotify app YAML
+# (4-space indent, same level as `depends_on:`). It patches WAIT_MS in the bundled
+# server at container start, then hands off to the normal LSIO /init entrypoint.
+# Check the your_spotify log for:  [poll-patch] WAIT_MS = 30 * 1000
+#
+# Also keep the Mongo data on a pool dataset, not the boot pool:
+#   your_spotify_mongo:
+#     volumes:
+#       - /mnt/TrueNas_SSD/homepage/your-spotify/db:/data/db
+
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        F=/app/www/apps/server/build/index.js
+        sed -i -E 's/(WAIT_MS[[:space:]]*=[[:space:]]*)(120[[:space:]]*\*[[:space:]]*1000|120[[:space:]]*\*[[:space:]]*1e3|12e4|120000)/\130 * 1000/' "$$F"
+        echo "[poll-patch] $$(grep -o 'WAIT_MS *= *[^;,]*' "$$F" | head -1)"
+        exec /init

@@ -1,0 +1,69 @@
+# Homelab dashboard - replaces Homepage + homepage-helper.
+# Paste over the "homepage" app's YAML: Apps > homepage > Edit.
+# Replace every REPLACE_ME with real values in the TrueNAS app config only - never commit real keys.
+# TrueNAS, UniFi and Running apps are set here; every other tile is defined in dash/services.toml.
+
+services:
+  dockerproxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+    container_name: homepage-dockerproxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1   # list/inspect containers + stats
+      POST: 0         # read-only
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  glances:
+    image: nicolargo/glances:latest-full
+    container_name: homepage-glances
+    restart: unless-stopped
+    pid: host
+    network_mode: host          # API on <NAS_IP>:61208
+    environment:
+      GLANCES_OPT: "-w --disable-webui"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/os-release:/etc/os-release:ro
+
+  dash:
+    image: python:3.13-slim
+    container_name: homelab-dash
+    restart: unless-stopped
+    user: "568:568"
+    command: ["python", "-u", "/app/app.py"]
+    depends_on:
+      - dockerproxy
+    ports:
+      - 3000:3000                 # same address as Homepage was: http://10.59.253.14:3000
+    volumes:
+      - /mnt/TrueNas_SSD/homepage/dash:/app:ro                # app.py, tiles.py, services.toml, static/
+      - /mnt/TrueNas_SSD/homepage/helper-data:/data           # throughput history (kept from the helper)
+    environment:
+      TZ: America/New_York
+      POLL_SECONDS: 30            # everything...
+      SLOW_POLL_SECONDS: 300      # ...except top clients, Steam, Spotify stats, library counts
+      RETENTION_DAYS: 7
+      TOP_N: 10                   # rows in the Top clients list
+
+      TRUENAS_URL: https://10.59.253.14             # always connects over wss
+      TRUENAS_KEY: REPLACE_ME                       # was HOMEPAGE_VAR_TRUENAS_KEY
+      PRIMARY_POOL: TrueNas_SSD                     # pool shown big on the TrueNAS tile
+      GLANCES_URL: http://10.59.253.14:61208
+      DOCKER_URL: http://dockerproxy:2375
+
+      UNIFI_URL: https://192.168.1.1                # was HOMEPAGE_VAR_UNIFI_URL
+      UNIFI_KEY: REPLACE_ME                         # was HOMEPAGE_VAR_UNIFI_KEY
+      UNIFI_NAME: UniFi Dream Machine Pro
+
+      # ---- secrets for the tiles in services.toml ("${NAME}" there reads NAME from here)
+      PLEX_TOKEN: REPLACE_ME
+      DELUGE_PASSWORD: REPLACE_ME
+      SONARR_KEY: REPLACE_ME
+      YOURSPOTIFY_TOKEN: REPLACE_ME
+      STEAM_KEY: REPLACE_ME
+      STEAM_ID: "REPLACE_ME"                        # 17-digit SteamID64 - keep the quotes or YAML rounds it
+      # RADARR_KEY: REPLACE_ME
+      # PROWLARR_KEY: REPLACE_ME
+      # SEERR_KEY: REPLACE_ME
+      # AUTHENTIK_TOKEN: REPLACE_ME

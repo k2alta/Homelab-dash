@@ -1,0 +1,131 @@
+# ---------------------------------------------------------------------------------------------
+#  HomeLab dashboard - tiles
+#
+#  Copy this file to services.toml (next to app.py) and edit it. Restart the app after changes.
+#
+#  Every [[tile]] block is one tile. Tiles appear in the order written here, grouped under
+#  their `section` heading (default "Media & Apps"). Add, remove, reorder or duplicate freely.
+#
+#  Secrets: never paste keys here. Write "${SOME_NAME}" and put SOME_NAME=the-key in the
+#  compose file's environment section. A missing variable shows "Not configured" on the tile.
+#
+#  Options every tile accepts:
+#    type      which integration (list below)                       required
+#    name      title on the tile                                    default: the app's name
+#    subtitle  small text under the title                           default per type
+#    section   heading the tile sits under                          default "Media & Apps"
+#    icon      "radarr" (from dashboard-icons), "my.png" (static/icons/), or a full https:// URL
+#    link      where clicking the title goes                        default: url
+#    poll      seconds between checks                               default 30 (300 for Steam)
+#    enabled   false hides the tile without deleting it
+#
+#  Types: plex, jellyfin, deluge, qbittorrent, sonarr, radarr, lidarr, prowlarr,
+#         seerr (also: jellyseerr, overseerr), your_spotify, steam, authentik, cloudflared,
+#         http (is it up?), json (any JSON API)
+# ---------------------------------------------------------------------------------------------
+
+[dashboard]
+title = "HomeLab"
+
+
+# =============================================================== Media & Apps
+
+[[tile]]
+type = "plex"
+url = "http://192.168.1.10:32400"
+token = "${PLEX_TOKEN}"              # X-Plex-Token
+
+[[tile]]
+type = "jellyfin"
+url = "http://192.168.1.10:8096"
+key = "${JELLYFIN_KEY}"              # Dashboard > API Keys
+enabled = false
+
+[[tile]]
+type = "deluge"
+url = "http://192.168.1.10:8112"
+password = "${DELUGE_PASSWORD}"      # web UI password
+
+[[tile]]
+type = "qbittorrent"
+url = "http://192.168.1.10:8080"
+username = "admin"                   # leave out if "bypass auth for localhost/subnet" is on
+password = "${QBIT_PASSWORD}"
+enabled = false
+
+[[tile]]
+type = "sonarr"
+url = "http://192.168.1.10:8989"
+key = "${SONARR_KEY}"                # Settings > General > API Key
+
+[[tile]]
+type = "radarr"
+url = "http://192.168.1.10:7878"
+key = "${RADARR_KEY}"
+
+[[tile]]
+type = "lidarr"
+url = "http://192.168.1.10:8686"
+key = "${LIDARR_KEY}"
+enabled = false
+
+[[tile]]
+type = "prowlarr"
+url = "http://192.168.1.10:9696"
+key = "${PROWLARR_KEY}"
+
+[[tile]]
+type = "jellyseerr"                  # same API as overseerr / seerr
+url = "http://192.168.1.10:5055"
+key = "${SEERR_KEY}"                 # Settings > General > API Key
+# alert_pending = true              # also list pending requests under "Needs attention"
+
+[[tile]]
+type = "your_spotify"                # https://github.com/Yooooomi/your_spotify
+url = "https://192.168.1.10:8443/api"
+token = "${YOURSPOTIFY_TOKEN}"       # Settings > Public token
+
+[[tile]]
+type = "steam"
+key = "${STEAM_KEY}"                 # https://steamcommunity.com/dev/apikey
+steam_id = "${STEAM_ID}"             # 17-digit SteamID64; quote it in the compose file
+
+
+# =============================================================== Network & Security
+
+[[tile]]
+type = "authentik"
+section = "Network & Security"
+url = "https://auth.example.com"
+token = "${AUTHENTIK_TOKEN}"         # Admin > Directory > Tokens, intent "API", admin user
+# failed_login_alert = 10           # warn at this many failed logins in 24 h
+
+[[tile]]
+type = "cloudflared"
+section = "Network & Security"
+url = "http://192.168.1.10:2000"     # cloudflared metrics address: run it with TUNNEL_METRICS=0.0.0.0:2000
+# expected_connections = 4
+
+# Any web page or service: up/down, latency, uptime since the dashboard started
+[[tile]]
+type = "http"
+section = "Network & Security"
+name = "Home Assistant"
+icon = "home-assistant"
+url = "http://192.168.1.10:8123"
+# expect = [200, 401]               # status codes that count as "up" (default: anything below 400)
+
+# Any JSON API: pick numbers by path. Formats: number (default), bytes, percent, text
+[[tile]]
+type = "json"
+section = "Network & Security"
+name = "AdGuard Home"
+icon = "adguard-home"
+subtitle = "DNS filtering"
+url = "http://192.168.1.10:3000/control/stats"
+username = "admin"                   # basic auth (optional); or: headers = { "X-Api-Key" = "${KEY}" }
+password = "${ADGUARD_PASSWORD}"
+stats = [
+  { label = "Queries", path = "num_dns_queries" },
+  { label = "Blocked", path = "num_blocked_filtering" },
+]
