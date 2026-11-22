@@ -55,6 +55,7 @@ DOCKER_URL = env("DOCKER_URL", "http://dockerproxy:2375").rstrip("/")
 UNIFI_URL = env("UNIFI_URL").rstrip("/")
 UNIFI_KEY = env("UNIFI_KEY")
 UNIFI_SITE = env("UNIFI_SITE", "default")
+UNIFI_WEB = env("UNIFI_WEB_URL", f"{UNIFI_URL}/network/{UNIFI_SITE}" if UNIFI_URL else "").rstrip("/")   # where clicks go
 UNIFI_NAME = env("UNIFI_NAME", "UniFi Dream Machine Pro")
 SERVICES_FILE = env("SERVICES_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "services.toml"))
 
@@ -412,12 +413,23 @@ def throughput(hours):
     hours = max(1, min(hours, RETENTION_DAYS * 24))
     bucket = 3600 if hours <= 48 else 6 * 3600
     since = int(time.time()) - hours * 3600
-    rows = db_exec(f"SELECT (ts / {bucket}) * {bucket} AS b, AVG(rx), AVG(tx) FROM samples WHERE ts >= ? GROUP BY b ORDER BY b",
+    rows = db_exec(f"SELECT (ts / {bucket}) * {bucket} AS b, AVG(rx), AVG(tx), COUNT(*) FROM samples WHERE ts >= ? GROUP BY b ORDER BY b",
                    (since,), fetch=True)
+    # per bucket: highest 5-minute average, so the hover can show "peak" next to the hourly average
+    peaks = {r[0]: (r[1], r[2]) for r in db_exec(
+        f"SELECT b, MAX(d), MAX(u) FROM (SELECT (ts / {bucket}) * {bucket} AS b, AVG(rx) AS d, AVG(tx) AS u "
+        f"FROM samples WHERE ts >= ? GROUP BY ts / 300) GROUP BY b", (since,), fetch=True)}
     five = db_exec("SELECT MAX(d) FROM (SELECT AVG(rx) AS d FROM samples WHERE ts >= ? GROUP BY ts / 300)", (since,), fetch=True)
+    points = []
+    for b, rx, tx, n in rows:
+        covered = min(bucket, n * POLL)          # seconds of the bucket we actually have samples for
+        pd, pu = peaks.get(b, (rx, tx))
+        points.append({"t": b, "down": mbps(rx), "up": mbps(tx), "peak_down": mbps(pd), "peak_up": mbps(pu),
+                       "gb_down": round(num(rx) * covered / 1e9, 2), "gb_up": round(num(tx) * covered / 1e9, 2),
+                       "coverage": round(covered / bucket, 2)})
     return {"bucket_seconds": bucket, "hours": hours,
             "peak_5min_mbps": mbps(five[0][0]) if five and five[0][0] is not None else None,
-            "points": [{"t": r[0], "down": mbps(r[1]), "up": mbps(r[2])} for r in rows]}
+            "points": points}
 
 
 # ============================================================================ scheduling
@@ -526,7 +538,8 @@ def build_state():
         "app_updates": updates,
         "primary_pool": PRIMARY_POOL,
         "title": DASH.get("title") or "HomeLab",
-        "links": {"truenas": TRUENAS_URL, "unifi": UNIFI_URL},
+        "links": {"truenas": TRUENAS_URL, "unifi": f"{UNIFI_WEB}/dashboard" if UNIFI_WEB else "",
+                  "unifi_clients": f"{UNIFI_WEB}/clients" if UNIFI_WEB else ""},
     })
     return out
 

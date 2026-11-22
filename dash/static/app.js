@@ -122,6 +122,11 @@ function renderTrueNAS() {
 function renderUnifi() {
   const u = STATE.unifi, d = u.data || {};
   $('#unifi-sub').textContent = d.name || 'UniFi';
+  const links = STATE.links || {};
+  [['#unifi-link', links.unifi], ['#unifi-clients-link', links.unifi_clients]].forEach(([sel, href]) => {
+    if (href) $(sel).setAttribute('href', href); else $(sel).removeAttribute('href');
+  });
+  const linkStat = (href, inner) => href ? `<a class="stat stat-link" href="${esc(href)}" target="_blank" rel="noopener">${inner}</a>` : `<div class="stat">${inner}</div>`;
   if (!u.configured) {
     $('#unifi-strip').innerHTML = '<div class="note">Not configured.</div>';
   } else if (!u.data) {
@@ -132,8 +137,8 @@ function renderUnifi() {
     $('#unifi-strip').innerHTML =
       `<div class="stat"><div class="stat-l">Now · every ${STATE.poll_seconds} s</div><div class="stat-v"><span style="color:var(--down-t)">↓ ${d.down_mbps.toFixed(1)}</span> <span style="color:var(--up-t)">↑ ${d.up_mbps.toFixed(1)}</span> <small>Mbps</small></div></div>`
       + `<div class="stat"><div class="stat-l">Peak (5-min avg)</div><div class="stat-v">${peak} <small>Mbps</small></div></div>`
-      + `<div class="stat"><div class="stat-l">WAN</div><div class="stat-v" style="display:flex;align-items:center;gap:8px"><span class="dot ${wanUp ? '' : 'red'}"></span>${wanUp ? 'Up' : 'Down'}${d.wan_uptime_s ? ' · ' + fmtUptime(d.wan_uptime_s) : ''}</div></div>`
-      + `<div class="stat"><div class="stat-l">Clients</div><div class="stat-v">${d.lan_users + d.wlan_users} <small>${d.lan_users} wired · ${d.wlan_users} Wi-Fi</small></div></div>`
+      + linkStat(links.unifi, `<div class="stat-l">WAN</div><div class="stat-v" style="display:flex;align-items:center;gap:8px"><span class="dot ${wanUp ? '' : 'red'}"></span>${wanUp ? 'Up' : 'Down'}${d.wan_uptime_s ? ' · ' + fmtUptime(d.wan_uptime_s) : ''}</div>`)
+      + linkStat(links.unifi_clients, `<div class="stat-l">Clients</div><div class="stat-v">${d.lan_users + d.wlan_users} <small>${d.lan_users} wired · ${d.wlan_users} Wi-Fi</small></div>`)
       + (u.ok === false ? `<div class="err" style="grid-column:1/-1">Showing last good data. ${esc(u.error)}</div>` : '');
   }
   const top = STATE.unifi_top;
@@ -147,7 +152,7 @@ function renderUnifi() {
 function niceMax(v) {
   if (v <= 1) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(v)));
-  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((x) => x >= v);
+  return [1, 2, 4, 6, 8, 10].map((m) => m * p).find((x) => x >= v);   // divisible by 4 = round gridline labels
 }
 
 function renderChart() {
@@ -171,8 +176,7 @@ function renderChart() {
   if (chartType === 'bars') {
     html += '<div class="bars">' + slots.map((s) => {
       if (!s.p) return '<div></div>';
-      const title = `${new Date(s.t * 1000).toLocaleString([], { weekday: 'short', hour: 'numeric' })}: ↓ ${s.p.down.toFixed(1)} / ↑ ${s.p.up.toFixed(1)} Mbps`;
-      return `<div title="${esc(title)}"><i class="d" style="height:${(s.p.down / max * 100).toFixed(1)}%"></i><i class="u" style="height:${Math.max(1, s.p.up / max * 100).toFixed(1)}%"></i></div>`;
+      return `<div><i class="d" style="height:${(s.p.down / max * 100).toFixed(1)}%"></i><i class="u" style="height:${Math.max(1, s.p.up / max * 100).toFixed(1)}%"></i></div>`;
     }).join('') + '</div>';
   } else {
     const X = (i) => (n === 1 ? 500 : (i / (n - 1)) * 1000), Y = (v) => 250 - (v / max) * 250;
@@ -184,7 +188,14 @@ function renderChart() {
       + `<path d="${path('down')}" fill="none" stroke="var(--down)" stroke-width="2.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`
       + `<path d="${path('up')}" fill="none" stroke="var(--up)" stroke-width="2.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
   }
+  if (chartType === 'line') {
+    // dots for the hovered point, positioned in % so they line up with the stretched SVG
+    html += '<div class="chart-guide" hidden><i class="d"></i><i class="u"></i></div>';
+  }
+  html += '<div class="chart-hits"></div><div class="chart-tip" hidden></div>';
   chart.innerHTML = html;
+  CHART = { slots, max, bucket, n };
+  if (hoverIdx != null) showTip(hoverIdx);
   xaxis.innerHTML = slots.map((s, i) => {
     const d = new Date(s.t * 1000);
     let label = '';
@@ -193,6 +204,74 @@ function renderChart() {
     return `<div>${label}</div>`;
   }).join('');
 }
+
+/* ------------------------------------------------------------------ chart hover */
+let CHART = null, hoverIdx = null;
+
+function fmtGB(gb) {
+  if (gb == null) return '–';
+  return gb >= 100 ? gb.toFixed(0) + ' GB' : gb >= 1 ? gb.toFixed(1) + ' GB' : Math.round(gb * 1000) + ' MB';
+}
+
+function showTip(i) {
+  const chart = $('#chart'), tip = chart.querySelector('.chart-tip');
+  if (!CHART || !tip || i == null || i >= CHART.slots.length) return;
+  hoverIdx = i;
+  const { slots, max, bucket, n } = CHART, s = slots[i], p = s.p;
+  const start = new Date(s.t * 1000), end = new Date((s.t + bucket) * 1000);
+  const hr = (d) => d.toLocaleTimeString([], { hour: 'numeric' });
+  const day = start.toLocaleDateString([], { weekday: 'short' });
+  const now = Date.now() / 1000, partial = now < s.t + bucket;
+  const head = `${day} ${hr(start)} – ${hr(end)}${partial ? ' <span class="muted">(so far)</span>' : ''}`;
+  tip.innerHTML = !p ? `<div class="tip-h">${head}</div><div class="muted">No data for this ${bucket === 3600 ? 'hour' : 'period'}</div>`
+    : `<div class="tip-h">${head}</div>`
+      + `<div class="tip-grid"><span></span><span class="muted">avg</span><span class="muted">peak</span>`
+      + `<span><b style="color:var(--down-t)">↓</b> Down</span><b>${p.down.toFixed(1)}</b><b>${(p.peak_down ?? p.down).toFixed(1)}</b>`
+      + `<span><b style="color:var(--up-t)">↑</b> Up</span><b>${p.up.toFixed(1)}</b><b>${(p.peak_up ?? p.up).toFixed(1)}</b></div>`
+      + `<div class="tip-f">Mbps · ≈ ${fmtGB(p.gb_down)} down, ${fmtGB(p.gb_up)} up${p.coverage != null && p.coverage < 0.9 && !partial ? ` · ${Math.round(p.coverage * 100)}% sampled` : ''}</div>`;
+  tip.hidden = false;
+  // highlight the column
+  chart.querySelectorAll('.bars > div').forEach((el, j) => el.classList.toggle('dim', j !== i));
+  const guide = chart.querySelector('.chart-guide');
+  if (guide) {
+    const x = n === 1 ? 50 : (i / (n - 1)) * 100;
+    guide.hidden = !p;
+    guide.style.left = x + '%';
+    if (p) {
+      guide.querySelector('.d').style.bottom = (p.down / max * 100) + '%';
+      guide.querySelector('.u').style.bottom = (p.up / max * 100) + '%';
+    }
+  }
+  // keep the tooltip inside the chart
+  const w = chart.clientWidth, tw = tip.offsetWidth;
+  const cx = chartType === 'line' ? (n === 1 ? w / 2 : (i / (n - 1)) * w) : ((i + 0.5) / n) * w;
+  const left = Math.max(0, Math.min(w - tw, cx - tw / 2));
+  tip.style.left = left + 'px';
+}
+
+function hideTip() {
+  hoverIdx = null;
+  const chart = $('#chart');
+  chart.querySelectorAll('.chart-tip, .chart-guide').forEach((el) => { el.hidden = true; });
+  chart.querySelectorAll('.bars > div.dim').forEach((el) => el.classList.remove('dim'));
+}
+
+function slotAt(e) {
+  // bars: which column the pointer is over; line: the nearest data point
+  if (!CHART) return null;
+  const r = $('#chart').getBoundingClientRect(), f = Math.max(0, Math.min(0.9999, (e.clientX - r.left) / r.width)), n = CHART.n;
+  return chartType === 'line' ? Math.round(f * (n - 1)) : Math.floor(f * n);
+}
+$('#chart').addEventListener('pointermove', (e) => {
+  if (!e.target.closest('.chart-hits')) return;
+  const i = slotAt(e);
+  if (i != null && i !== hoverIdx) showTip(i);
+});
+$('#chart').addEventListener('pointerdown', (e) => {          // tap on touch screens
+  if (e.target.closest('.chart-hits')) showTip(slotAt(e));
+});
+$('#chart').addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hideTip(); });
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#chart')) hideTip(); });
 
 /* ------------------------------------------------------------------ configurable tiles (services.toml) */
 function ago(iso) {
