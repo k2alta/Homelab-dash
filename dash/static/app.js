@@ -124,7 +124,9 @@ function renderUnifi() {
   $('#unifi-sub').textContent = d.name || 'UniFi';
   const links = STATE.links || {};
   [['#unifi-link', links.unifi], ['#unifi-clients-link', links.unifi_clients]].forEach(([sel, href]) => {
-    if (href) $(sel).setAttribute('href', href); else $(sel).removeAttribute('href');
+    const el = $(sel);
+    if (!el) return;
+    if (href) el.setAttribute('href', href); else el.removeAttribute('href');
   });
   const linkStat = (href, inner) => href ? `<a class="stat stat-link" href="${esc(href)}" target="_blank" rel="noopener">${inner}</a>` : `<div class="stat">${inner}</div>`;
   if (!u.configured) {
@@ -192,10 +194,10 @@ function renderChart() {
     // dots for the hovered point, positioned in % so they line up with the stretched SVG
     html += '<div class="chart-guide" hidden><i class="d"></i><i class="u"></i></div>';
   }
-  html += '<div class="chart-hits"></div><div class="chart-tip" hidden></div>';
+  html = '<div class="chart-band" hidden></div>' + html + '<div class="chart-hits"></div>';
   chart.innerHTML = html;
   CHART = { slots, max, bucket, n };
-  if (hoverIdx != null) showTip(hoverIdx);
+  if (hoverIdx != null && !TIP.hidden) showTip(hoverIdx); else hideTip();
   xaxis.innerHTML = slots.map((s, i) => {
     const d = new Date(s.t * 1000);
     let label = '';
@@ -213,47 +215,64 @@ function fmtGB(gb) {
   return gb >= 100 ? gb.toFixed(0) + ' GB' : gb >= 1 ? gb.toFixed(1) + ' GB' : Math.round(gb * 1000) + ' MB';
 }
 
-function showTip(i) {
-  const chart = $('#chart'), tip = chart.querySelector('.chart-tip');
-  if (!CHART || !tip || i == null || i >= CHART.slots.length) return;
-  hoverIdx = i;
-  const { slots, max, bucket, n } = CHART, s = slots[i], p = s.p;
+// The tooltip is one element on <body>, created once and only moved/refilled, never rebuilt with the chart.
+const TIP = document.createElement('div');
+TIP.className = 'chart-tip';
+TIP.hidden = true;
+document.body.appendChild(TIP);
+
+function tipHtml(s, bucket) {
+  const p = s.p;
   const start = new Date(s.t * 1000), end = new Date((s.t + bucket) * 1000);
-  const hr = (d) => d.toLocaleTimeString([], { hour: 'numeric' });
+  const hr = (d) => d.toLocaleTimeString([], { hour: 'numeric' }).replace(/\s/g, ' ');
   const day = start.toLocaleDateString([], { weekday: 'short' });
-  const now = Date.now() / 1000, partial = now < s.t + bucket;
-  const head = `${day} ${hr(start)} – ${hr(end)}${partial ? ' <span class="muted">(so far)</span>' : ''}`;
-  tip.innerHTML = !p ? `<div class="tip-h">${head}</div><div class="muted">No data for this ${bucket === 3600 ? 'hour' : 'period'}</div>`
-    : `<div class="tip-h">${head}</div>`
-      + `<div class="tip-grid"><span></span><span class="muted">avg</span><span class="muted">peak</span>`
-      + `<span><b style="color:var(--down-t)">↓</b> Down</span><b>${p.down.toFixed(1)}</b><b>${(p.peak_down ?? p.down).toFixed(1)}</b>`
-      + `<span><b style="color:var(--up-t)">↑</b> Up</span><b>${p.up.toFixed(1)}</b><b>${(p.peak_up ?? p.up).toFixed(1)}</b></div>`
-      + `<div class="tip-f">Mbps · ≈ ${fmtGB(p.gb_down)} down, ${fmtGB(p.gb_up)} up${p.coverage != null && p.coverage < 0.9 && !partial ? ` · ${Math.round(p.coverage * 100)}% sampled` : ''}</div>`;
-  tip.hidden = false;
-  // highlight the column
-  chart.querySelectorAll('.bars > div').forEach((el, j) => el.classList.toggle('dim', j !== i));
-  const guide = chart.querySelector('.chart-guide');
-  if (guide) {
-    const x = n === 1 ? 50 : (i / (n - 1)) * 100;
-    guide.hidden = !p;
-    guide.style.left = x + '%';
-    if (p) {
-      guide.querySelector('.d').style.bottom = (p.down / max * 100) + '%';
-      guide.querySelector('.u').style.bottom = (p.up / max * 100) + '%';
+  const partial = Date.now() / 1000 < s.t + bucket;
+  const head = `${day} ${hr(start)} - ${hr(end)}${partial ? ', so far' : ''}`;
+  if (!p) return `<div class="tip-h">${esc(head)}</div><div class="tip-f">No data for this ${bucket === 3600 ? 'hour' : 'period'}</div>`;
+  const f1 = (v) => (Number(v) || 0).toFixed(1);
+  const sampled = p.coverage != null && p.coverage < 0.9 && !partial ? `, ${Math.round(p.coverage * 100)}% sampled` : '';
+  return `<div class="tip-h">${esc(head)}</div>`
+    + '<div class="tip-grid"><span></span><span class="tip-k">avg</span><span class="tip-k">peak</span>'
+    + `<span class="tip-dn">Down</span><b>${f1(p.down)}</b><b>${f1(p.peak_down ?? p.down)}</b>`
+    + `<span class="tip-up">Up</span><b>${f1(p.up)}</b><b>${f1(p.peak_up ?? p.up)}</b></div>`
+    + `<div class="tip-f">Mbps. About ${fmtGB(p.gb_down)} down, ${fmtGB(p.gb_up)} up${sampled}</div>`;
+}
+
+function showTip(i) {
+  try {
+    const chart = $('#chart');
+    if (!CHART || i == null || i < 0 || i >= CHART.slots.length) return;
+    hoverIdx = i;
+    const { slots, max, bucket, n } = CHART, s = slots[i], p = s.p;
+    TIP.innerHTML = tipHtml(s, bucket);
+    TIP.hidden = false;
+    // highlight: a band behind the hovered column (bars) or a guide line with dots (line)
+    const band = chart.querySelector('.chart-band'), guide = chart.querySelector('.chart-guide');
+    if (band) { band.hidden = false; band.style.left = (i / n * 100) + '%'; band.style.width = (100 / n) + '%'; }
+    if (guide) {
+      guide.hidden = !p;
+      guide.style.left = (n === 1 ? 50 : (i / (n - 1)) * 100) + '%';
+      if (p && max > 0) {
+        guide.querySelector('.d').style.bottom = Math.min(100, p.down / max * 100) + '%';
+        guide.querySelector('.u').style.bottom = Math.min(100, p.up / max * 100) + '%';
+      }
     }
+    // place it over the chart, kept inside the chart's width
+    const r = chart.getBoundingClientRect(), tw = TIP.offsetWidth;
+    const cx = chartType === 'line' ? (n === 1 ? r.width / 2 : (i / (n - 1)) * r.width) : ((i + 0.5) / n) * r.width;
+    const left = Math.round(r.left + Math.max(0, Math.min(r.width - tw, cx - tw / 2)));
+    TIP.style.left = left + 'px';
+    TIP.style.top = Math.round(r.top + 6) + 'px';
+  } catch (e) {
+    console.error('[dash] chart hover failed:', e);
   }
-  // keep the tooltip inside the chart
-  const w = chart.clientWidth, tw = tip.offsetWidth;
-  const cx = chartType === 'line' ? (n === 1 ? w / 2 : (i / (n - 1)) * w) : ((i + 0.5) / n) * w;
-  const left = Math.max(0, Math.min(w - tw, cx - tw / 2));
-  tip.style.left = left + 'px';
 }
 
 function hideTip() {
   hoverIdx = null;
+  TIP.hidden = true;
   const chart = $('#chart');
-  chart.querySelectorAll('.chart-tip, .chart-guide').forEach((el) => { el.hidden = true; });
-  chart.querySelectorAll('.bars > div.dim').forEach((el) => el.classList.remove('dim'));
+  chart.querySelectorAll('.chart-band, .chart-guide').forEach((el) => { el.hidden = true; });
 }
 
 function slotAt(e) {
@@ -272,6 +291,7 @@ $('#chart').addEventListener('pointerdown', (e) => {          // tap on touch sc
 });
 $('#chart').addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hideTip(); });
 document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#chart')) hideTip(); });
+window.addEventListener('scroll', () => { if (!TIP.hidden) hideTip(); }, { passive: true });
 
 /* ------------------------------------------------------------------ configurable tiles (services.toml) */
 function ago(iso) {
@@ -394,10 +414,15 @@ function renderHeader() {
     : '<li class="info"><div class="ttl">All clear</div><div class="txt">Nothing needs attention right now.</div></li>';
 }
 
+function safe(name, fn) {
+  // one section failing must not stop the others from rendering
+  try { fn(); } catch (e) { console.error(`[dash] ${name} failed to render:`, e); }
+}
+
 function renderAll() {
   if (!STATE) return;
-  renderHeader(); renderTrueNAS(); renderUnifi(); renderChart();
-  renderTiles(); renderApps();
+  safe('header', renderHeader); safe('truenas', renderTrueNAS); safe('unifi', renderUnifi); safe('chart', renderChart);
+  safe('tiles', renderTiles); safe('apps', renderApps);
   if (STATE.title) { $('#title').textContent = STATE.title; document.title = STATE.title; }
 }
 
@@ -418,12 +443,23 @@ async function loadState() {
     STATE = await r.json();
     lastOk = new Date(STATE.now * 1000);
     fetchFailed = false;
-    renderAll();
   } catch (e) {
     fetchFailed = true;
   }
+  if (!fetchFailed) { checkBuild(); renderAll(); }
   tick();
   setTimeout(loadState, ((STATE && STATE.poll_seconds) || 30) * 1000);
+}
+
+// Reload the page when the dashboard's files change (after an update), so the browser never mixes
+// an old index.html with a new app.js. Waits until two polls agree, in case files are still being copied.
+let BUILD = null, pendingBuild = null;
+function checkBuild() {
+  if (!STATE.build) return;
+  if (BUILD == null) { BUILD = STATE.build; return; }
+  if (STATE.build === BUILD) { pendingBuild = null; return; }
+  if (STATE.build === pendingBuild) location.reload();
+  else pendingBuild = STATE.build;
 }
 
 async function loadThroughput() {
@@ -431,7 +467,7 @@ async function loadThroughput() {
     const r = await fetch('api/throughput?hours=' + range, { cache: 'no-store' });
     if (r.ok) THR = await r.json();
   } catch (e) { /* keep last */ }
-  if (STATE) { renderUnifi(); renderChart(); }
+  if (STATE) { safe('unifi', renderUnifi); safe('chart', renderChart); }
 }
 
 document.addEventListener('click', (e) => {

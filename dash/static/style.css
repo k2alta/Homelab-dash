@@ -146,18 +146,19 @@ a.tile-title:hover h2, a.tile-title:hover h3 { text-decoration: underline; text-
 .bars i.d { background: var(--down); } .bars i.u { background: var(--up); }
 .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .chart-hits { position: absolute; inset: 0; z-index: 2; cursor: crosshair; touch-action: pan-y; }
-.bars > div { transition: opacity .12s; }
-.bars > div.dim { opacity: .4; }
+.chart-band { position: absolute; top: 0; bottom: 0; background: var(--track); border-radius: 4px; pointer-events: none; }
 .chart-guide { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--muted); pointer-events: none; z-index: 1; }
 .chart-guide i { position: absolute; left: -5px; width: 10px; height: 10px; margin-bottom: -5px; border-radius: 50%; border: 2px solid var(--card); }
 .chart-guide i.d { background: var(--down); } .chart-guide i.u { background: var(--up); }
-.chart-tip { position: absolute; top: 6px; z-index: 3; pointer-events: none; min-width: 190px; padding: 10px 12px; border-radius: 12px;
-  background: var(--card); color: var(--text); border: 1px solid var(--dlg-line); box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 13px; }
+.chart-tip { position: fixed; z-index: 50; pointer-events: none; min-width: 180px; padding: 10px 12px; border-radius: 10px;
+  background: var(--card); color: var(--text); border: 1px solid var(--dlg-line); font-size: 13px; }
 .tip-h { font-weight: 600; margin-bottom: 6px; white-space: nowrap; }
 .tip-grid { display: grid; grid-template-columns: auto auto auto; gap: 3px 14px; align-items: baseline; }
 .tip-grid > :nth-child(3n+2), .tip-grid > :nth-child(3n) { text-align: right; }
+.tip-k { color: var(--muted); font-size: 12px; }
+.tip-dn { color: var(--down-t); } .tip-up { color: var(--up-t); }
 .tip-f { margin-top: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
-a.stat.stat-link { color: inherit; text-decoration: none; transition: background .12s; }
+a.stat.stat-link { color: inherit; text-decoration: none; }
 a.stat.stat-link:hover { background: var(--track); }
 .tc-head a { color: inherit; text-decoration: none; }
 .tc-head a[href]:hover h3 { text-decoration: underline; text-underline-offset: 3px; }
@@ -279,7 +280,7 @@ dialog::backdrop { background: var(--backdrop); }
   .chart-x div { font-size: 10px; }
   .gridline span { left: -30px; width: 26px; }
   .bars { gap: 2px; }
-  .chart-tip { min-width: 170px; font-size: 12px; }
+  .chart-tip { min-width: 160px; font-size: 12px; }
   .bars > div { gap: 1px; }
 
   /* tiles: one column */
