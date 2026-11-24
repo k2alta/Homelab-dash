@@ -46,13 +46,13 @@ services:
       RETENTION_DAYS: 7
       TOP_N: 10                   # rows in the Top clients list
 
-      TRUENAS_URL: https://10.59.253.14             # always connects over wss
+      TRUENAS_URL: REPLACE_ME              # always connects over wss
       TRUENAS_KEY: REPLACE_ME                       # was HOMEPAGE_VAR_TRUENAS_KEY
       PRIMARY_POOL: TrueNas_SSD                     # pool shown big on the TrueNAS tile
-      GLANCES_URL: http://10.59.253.14:61208
+      GLANCES_URL: REPLACE_ME 
       DOCKER_URL: http://dockerproxy:2375
 
-      UNIFI_URL: https://192.168.1.1                # was HOMEPAGE_VAR_UNIFI_URL
+      UNIFI_URL: REPLACE_ME                # was HOMEPAGE_VAR_UNIFI_URL
       UNIFI_KEY: REPLACE_ME                         # was HOMEPAGE_VAR_UNIFI_KEY
       UNIFI_NAME: UniFi Dream Machine Pro
 
