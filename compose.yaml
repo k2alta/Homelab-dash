@@ -48,13 +48,13 @@ services:
 
       TRUENAS_URL: REPLACE_ME              # always connects over wss
       TRUENAS_KEY: REPLACE_ME                       # was HOMEPAGE_VAR_TRUENAS_KEY
-      PRIMARY_POOL: TrueNas_SSD                     # pool shown big on the TrueNAS tile
+      PRIMARY_POOL: REPLACE_ME                      # pool shown big on the TrueNAS tile
       GLANCES_URL: REPLACE_ME 
       DOCKER_URL: http://dockerproxy:2375
 
       UNIFI_URL: REPLACE_ME                # was HOMEPAGE_VAR_UNIFI_URL
       UNIFI_KEY: REPLACE_ME                         # was HOMEPAGE_VAR_UNIFI_KEY
-      UNIFI_NAME: UniFi Dream Machine Pro
+      UNIFI_NAME: REPLACE_ME 
 
       # ---- secrets for the tiles in services.toml ("${NAME}" there reads NAME from here)
       PLEX_TOKEN: REPLACE_ME
